@@ -1,3 +1,4 @@
+
 name: Build TizenBrew Standalone Application and Release
 
 on:
@@ -6,93 +7,138 @@ on:
     tags:
       - 'v*.*.*'
 
+permissions:
+  contents: write
+
 env:
-  TIZEN_STUDIO_VER: 5.6
+  TIZEN_STUDIO_VER: "5.6"
 
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - name: Clone repo
         uses: actions/checkout@v4
-      
-      - name: Set env
-        run: echo "RELEASE_VERSION=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
-      
+
       - name: Install modules and transpile service
         working-directory: tizenbrew-app/TizenBrew/service-nextgen/service
         run: |
-          sudo apt install -y expect zip coreutils
-          sudo curl -Lo /usr/bin/ldid https://github.com/ProcursusTeam/ldid/releases/download/v2.1.5-procursus7/ldid_linux_x86_64
-          sudo chmod a+rwx /usr/bin/ldid
+          sudo apt-get update
+          sudo apt-get install -y expect zip coreutils
+          sudo curl -fL -o /usr/bin/ldid https://github.com/ProcursusTeam/ldid/releases/download/v2.1.5-procursus7/ldid_linux_x86_64
+          sudo chmod 755 /usr/bin/ldid
           npm install
           npm install -g @vercel/ncc wgt-to-usb pkg
           npx babel . --out-dir transpiled --copy-files
-          rm -r node_modules
+          rm -rf node_modules
 
       - name: Build service
         working-directory: tizenbrew-app/TizenBrew/service-nextgen/service/transpiled
         run: |
           ncc build index.js -o ../dist
-          rm -r node_modules
+          rm -rf node_modules
 
       - name: Build UI
         working-directory: tizenbrew-app/TizenBrew/tizenbrew-ui
         run: |
           npm install --force
           npm run build
-          rm -r node_modules
+          rm -rf node_modules
 
       - name: Clean up transpiled files
         working-directory: tizenbrew-app/TizenBrew/service-nextgen/service
         run: |
-          rm -r transpiled
+          rm -rf transpiled
 
       - name: Download Tizen-Studio
         run: |
-          curl -o tizen-installer "https://download.tizen.org/sdk/Installer/tizen-studio_${TIZEN_STUDIO_VER}/web-cli_Tizen_Studio_${TIZEN_STUDIO_VER}_ubuntu-64.bin"
+          curl -fL -o tizen-installer "https://download.tizen.org/sdk/Installer/tizen-studio_${TIZEN_STUDIO_VER}/web-cli_Tizen_Studio_${TIZEN_STUDIO_VER}_ubuntu-64.bin"
 
       - name: Install Tizen-Studio
         run: |
           chmod +x tizen-installer
           ./tizen-installer --accept-license "${GITHUB_WORKSPACE}/tizen-studio"
-          rm ./tizen-installer
-          echo 'export PATH=$PATH:${GITHUB_WORKSPACE}/tizen-studio/tools/ide/bin' >> .bashrc
+          rm tizen-installer
 
-      - name: Prepare Tizen Certificate
+      - name: Prepare Tizen Certificates
+        env:
+          AUTHOR_KEY: ${{ secrets.TIZEN_AUTHOR_KEY }}
+          AUTHOR_PW: ${{ secrets.TIZEN_AUTHOR_KEY_PW }}
+          DISTRIBUTOR_KEY: ${{ secrets.TIZEN_DISTRIBUTOR_KEY }}
+          DISTRIBUTOR_PW: ${{ secrets.TIZEN_DISTRIBUTOR_KEY_PW }}
         run: |
-          mkdir -p "${GITHUB_WORKSPACE}/tizen-studio-data/keystore/author/"
-          echo "${{ secrets.TIZEN_AUTHOR_KEY }}" | base64 -d > "${GITHUB_WORKSPACE}/tizen-studio-data/keystore/author/tizenbrew-author.p12"
-          ./tizen-studio/tools/ide/bin/tizen cli-config "profiles.path=${GITHUB_WORKSPACE}/tizen-studio-data/profile/profiles.xml"
-          cp .github/assets/profiles.xml "${GITHUB_WORKSPACE}/tizen-studio-data/profile/profiles.xml"
-          sed -i "s|\$GITHUB_WORKSPACE|${GITHUB_WORKSPACE}|g" "${GITHUB_WORKSPACE}/tizen-studio-data/profile/profiles.xml"
-          sed -i "s|\$KEY_PW|${{ secrets.TIZEN_AUTHOR_KEY_PW }}|g" "${GITHUB_WORKSPACE}/tizen-studio-data/profile/profiles.xml"
-          chmod 755 "./tizen-studio-data/profile/profiles.xml"
+          set -eu
+
+          mkdir -p "$GITHUB_WORKSPACE/tizen-studio-data/keystore/author"
+          mkdir -p "$GITHUB_WORKSPACE/tizen-studio-data/keystore/distributor"
+          mkdir -p "$GITHUB_WORKSPACE/tizen-studio-data/profile"
+
+          printf '%s' "$AUTHOR_KEY" | base64 -d > "$GITHUB_WORKSPACE/tizen-studio-data/keystore/author/tizenbrew-author.p12"
+          printf '%s' "$DISTRIBUTOR_KEY" | base64 -d > "$GITHUB_WORKSPACE/tizen-studio-data/keystore/distributor/tizenbrew-distributor.p12"
+
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          from xml.sax.saxutils import escape
+
+          workspace = Path(os.environ["GITHUB_WORKSPACE"])
+          source = workspace / ".github/assets/profiles.xml"
+          destination = workspace / "tizen-studio-data/profile/profiles.xml"
+
+          content = source.read_text(encoding="utf-8")
+          replacements = {
+              "$GITHUB_WORKSPACE": str(workspace),
+              "$AUTHOR_PW": escape(os.environ["AUTHOR_PW"], {'"': '&quot;'}),
+              "$DISTRIBUTOR_PW": escape(os.environ["DISTRIBUTOR_PW"], {'"': '&quot;'}),
+          }
+
+          for old, new in replacements.items():
+              content = content.replace(old, new)
+
+          destination.write_text(content, encoding="utf-8")
+          PY
+
+          chmod 600 "$GITHUB_WORKSPACE/tizen-studio-data/profile/profiles.xml"
+          chmod 600 "$GITHUB_WORKSPACE/tizen-studio-data/keystore/author/tizenbrew-author.p12"
+          chmod 600 "$GITHUB_WORKSPACE/tizen-studio-data/keystore/distributor/tizenbrew-distributor.p12"
+
+          "$GITHUB_WORKSPACE/tizen-studio/tools/ide/bin/tizen" cli-config \
+            "profiles.path=$GITHUB_WORKSPACE/tizen-studio-data/profile/profiles.xml"
 
       - name: Build TizenBrew
         working-directory: tizenbrew-app/TizenBrew
         run: |
-          ${GITHUB_WORKSPACE}/tizen-studio/tools/ide/bin/tizen build-web -e ".*" -e "node_modules/*" -e "package*.json" -e "yarn.lock"
+          "$GITHUB_WORKSPACE/tizen-studio/tools/ide/bin/tizen" build-web \
+            -e ".*" \
+            -e "node_modules/*" \
+            -e "package*.json" \
+            -e "yarn.lock"
 
-      - name: Package TizenBrew for Old Tizen
+      - name: Package TizenBrew with Samsung Certificate
         env:
-          PASSWORD: ${{ secrets.TIZEN_AUTHOR_KEY_PW }}
           APP_PATH: tizenbrew-app/TizenBrew
-          CERT: TizenBrew-Old
+          CERT: TizenBrew-Samsung
         run: |
+          set -eu
           expect ./package.exp
-          cat "${GITHUB_WORKSPACE}/tizen-studio-data/cli/logs/cli.log"
-          mv tizenbrew-app/TizenBrew/release/TizenBrewNextGeneration.wgt tizenbrew-app/TizenBrew/release/TizenBrewStandalone-Old.wgt
 
-      - name: Upload TizenBrew package artifact for Old Tizen
+          test -f "tizenbrew-app/TizenBrew/release/TizenBrewNextGeneration.wgt"
+
+          mv "tizenbrew-app/TizenBrew/release/TizenBrewNextGeneration.wgt" \
+             "tizenbrew-app/TizenBrew/release/TizenBrewStandalone-Samsung.wgt"
+
+      - name: Upload TizenBrew test package
         uses: actions/upload-artifact@v4
         with:
-            name: app-${{ github.sha }}-old.wgt
-            path: tizenbrew-app/TizenBrew/release/TizenBrewStandalone-Old.wgt
-      
+          name: TizenBrew-Samsung-${{ github.sha }}
+          path: tizenbrew-app/TizenBrew/release/TizenBrewStandalone-Samsung.wgt
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Release TizenBrew Build Results
-        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ env.RELEASE_VERSION }}
           files: |
-            tizenbrew-app/TizenBrew/release/*
+            tizenbrew-app/TizenBrew/release/TizenBrewStandalone-Samsung.wgt
