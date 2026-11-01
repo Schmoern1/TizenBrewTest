@@ -84,7 +84,7 @@ jobs:
           source = workspace / ".github/assets/profiles.xml"
           destination = workspace / "tizen-studio-data/profile/profiles.xml"
 
-          content = source.read_text(encoding="utf-8")
+          content = source.read_text(encoding="utf-8").lstrip("\ufeff \t\r\n")
 
           replacements = {
               "$GITHUB_WORKSPACE": str(workspace),
@@ -125,6 +125,8 @@ jobs:
         env:
           APP_PATH: tizenbrew-app/TizenBrew
           CERT: TizenBrew-Samsung
+          AUTHOR_PW: ${{ secrets.TIZEN_AUTHOR_KEY_PW }}
+          DISTRIBUTOR_PW: ${{ secrets.TIZEN_DISTRIBUTOR_KEY_PW }}
         run: |
           set -eu
 
