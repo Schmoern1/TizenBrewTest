@@ -1,6 +1,7 @@
 name: Build TizenBrew Standalone Application and Release
 
 on:
+  workflow_dispatch:
   push:
     tags:
       - 'v*.*.*'
