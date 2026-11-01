@@ -12,7 +12,4 @@ set result [wait]
 set exit_code [lindex $result 3]
 exit $exit_code
 
-set result [wait]
-set exit_code [lindex $result 3]
-
 exit $exit_code
