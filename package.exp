@@ -1,30 +1,27 @@
-
 #!/usr/bin/expect -f
 
-set timeout 90
-log_user 1
+set timeout 180
 
 cd $env(APP_PATH)
 
 spawn $env(GITHUB_WORKSPACE)/tizen-studio/tools/ide/bin/tizen package -t wgt -o ./release -s $env(CERT) -- .buildResult
 
 expect {
-    -re {(?i)(password|passphrase).*:} {
-        puts stderr "\nERROR: Tizen Studio requests an interactive password."
-        puts stderr "Check the certificate profile and passwords."
-        catch {close}
-        catch {wait}
-        exit 1
+    -re "(?i)author password:" {
+        send -- "$env(AUTHOR_PW)\r"
+        exp_continue
+    }
+    -re "(?i)distributor password:" {
+        send -- "$env(DISTRIBUTOR_PW)\r"
+        exp_continue
     }
     timeout {
-        puts stderr "\nERROR: Tizen packaging timed out after 90 seconds."
-        catch {close}
-        catch {wait}
+        puts stderr "ERROR: Packaging timed out."
         exit 1
     }
-    eof {
-        set result [wait]
-        set exit_code [lindex $result 3]
-        exit $exit_code
-    }
+    eof
 }
+
+set result [wait]
+set exit_code [lindex $result 3]
+exit $exit_code
