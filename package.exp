@@ -1,21 +1,20 @@
+
 #!/usr/bin/expect -f
 
-set timeout 180
+set timeout 120
 log_user 1
 
 cd $env(APP_PATH)
 
 spawn $env(GITHUB_WORKSPACE)/tizen-studio/tools/ide/bin/tizen package -t wgt -o ./release -s $env(CERT) -- .buildResult
 
+after 2000
+send -- "$env(AUTHOR_PW)\r"
+
+after 2000
+send -- "$env(DISTRIBUTOR_PW)\r"
+
 expect {
-    -re {(?i)author password:} {
-        send -- "$env(AUTHOR_PW)\r"
-        exp_continue
-    }
-    -re {(?i)distributor password:} {
-        send -- "$env(DISTRIBUTOR_PW)\r"
-        exp_continue
-    }
     timeout {
         puts stderr "ERROR: Packaging timed out."
         exit 1
@@ -24,5 +23,4 @@ expect {
 }
 
 set result [wait]
-set exit_code [lindex $result 3]
-exit $exit_code
+exit [lindex $result 3]
