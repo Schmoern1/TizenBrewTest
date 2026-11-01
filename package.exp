@@ -10,6 +10,5 @@ spawn $env(GITHUB_WORKSPACE)/tizen-studio/tools/ide/bin/tizen package -t wgt -o 
 expect eof
 set result [wait]
 set exit_code [lindex $result 3]
-exit $exit_code
 
 exit $exit_code
