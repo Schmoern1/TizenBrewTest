@@ -2,7 +2,6 @@
 #!/usr/bin/expect -f
 
 set timeout 120
-log_user 1
 
 cd $env(APP_PATH)
 
@@ -13,12 +12,18 @@ expect {
         send -- "$env(AUTHOR_PW)\r"
         exp_continue
     }
-    -re {Distributor password:} {
+    -re {Distributor1 password:} {
         send -- "$env(DISTRIBUTOR_PW)\r"
         exp_continue
     }
+    -re {Save author password} {
+        exp_continue
+    }
+    -re {Save distributor password} {
+        exp_continue
+    }
     -re {Yes: \(Y\), No: \(N\) \?} {
-        send -- "Y\r"
+        send -- "N\r"
         exp_continue
     }
     timeout {
@@ -29,4 +34,5 @@ expect {
 }
 
 set result [wait]
-exit [lindex $result 3]
+set exit_code [lindex $result 3]
+exit $exit_code
