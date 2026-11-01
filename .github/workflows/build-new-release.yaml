@@ -78,6 +78,7 @@ jobs:
           import os
           from pathlib import Path
           from xml.sax.saxutils import escape
+          import xml.etree.ElementTree as ET
 
           workspace = Path(os.environ["GITHUB_WORKSPACE"])
           source = workspace / ".github/assets/profiles.xml"
@@ -101,6 +102,9 @@ jobs:
               content = content.replace(old, new)
 
           destination.write_text(content, encoding="utf-8")
+
+          ET.parse(destination)
+          print("SUCCESS: Certificate profile XML is valid.")
           PY
 
           chmod 600 "$GITHUB_WORKSPACE/tizen-studio-data/profile/profiles.xml"
@@ -130,6 +134,27 @@ jobs:
 
           mv "tizenbrew-app/TizenBrew/release/TizenBrewNextGeneration.wgt" \
              "tizenbrew-app/TizenBrew/release/TizenBrewStandalone-Samsung.wgt"
+
+      - name: Verify WGT signatures
+        run: |
+          python3 - <<'PY'
+          import zipfile
+
+          path = "tizenbrew-app/TizenBrew/release/TizenBrewStandalone-Samsung.wgt"
+
+          with zipfile.ZipFile(path) as z:
+              files = set(z.namelist())
+
+          required = {"author-signature.xml", "signature1.xml"}
+          missing = required - files
+
+          if missing:
+              raise SystemExit(
+                  f"ERROR: Missing WGT signatures: {sorted(missing)}"
+              )
+
+          print("SUCCESS: Both WGT signature files are present.")
+          PY
 
       - name: Upload TizenBrew test package
         uses: actions/upload-artifact@v4
